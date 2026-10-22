@@ -7,7 +7,7 @@ import sys
 import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
-from organizer import Organizer
+from organizer import Organizer, Reorganizer
 
 
 CONFIG = Path(os.environ.get('LOCALAPPDATA', Path.home() / 'Library' / 'Application Support')) / 'OrganizadorDescargas' / 'config.json'
@@ -18,10 +18,11 @@ class App:
         self.root = root
         self.stop = threading.Event()
         self.worker = None
+        self.manual = False
         self.events = queue.Queue()
         root.title('Organizador de descargas')
-        root.geometry('760x510')
-        root.minsize(640, 430)
+        root.geometry('820x590')
+        root.minsize(760, 510)
         frame = ttk.Frame(root, padding=20)
         frame.pack(fill='both', expand=True)
         frame.columnconfigure(1, weight=1)
@@ -42,17 +43,19 @@ class App:
         ttk.Label(frame, textvariable=self.status).grid(row=5, column=0, sticky='w', pady=15)
         self.toggle_button = ttk.Button(frame, text='Iniciar', command=self.toggle)
         self.toggle_button.grid(row=5, column=2)
+        self.reorder_button = ttk.Button(frame, text='Reordenar por fecha de modificación…', command=self.reorder)
+        self.reorder_button.grid(row=7, column=0, columnspan=3, sticky='w', pady=(12, 0))
         ttk.Label(frame, text='Incluye los archivos existentes. Se guardan en subcarpetas por día (AAAA-MM-DD).\nMinimizar mantiene la app activa; cerrar detiene la organización.').grid(row=6, column=0, columnspan=3, sticky='w')
-        ttk.Label(frame, text='Actividad · lo que está haciendo la aplicación').grid(row=7, column=0, columnspan=3, sticky='w', pady=(15, 5))
+        ttk.Label(frame, text='Actividad · lo que está haciendo la aplicación').grid(row=8, column=0, columnspan=3, sticky='w', pady=(15, 5))
         history = ttk.Frame(frame)
-        history.grid(row=8, column=0, columnspan=3, sticky='nsew')
+        history.grid(row=9, column=0, columnspan=3, sticky='nsew')
         self.log = tk.Text(history, height=10, state='disabled', wrap='word',
                            font=('TkDefaultFont', 12), padx=10, pady=10)
         scrollbar = ttk.Scrollbar(history, command=self.log.yview)
         self.log.configure(yscrollcommand=scrollbar.set)
         scrollbar.pack(side='right', fill='y')
         self.log.pack(side='left', fill='both', expand=True)
-        frame.rowconfigure(8, weight=1)
+        frame.rowconfigure(9, weight=1)
         try:
             settings = json.loads(CONFIG.read_text(encoding='utf-8'))
             for key, value in self.values.items():
@@ -98,6 +101,8 @@ class App:
             messagebox.showerror('Revisá las carpetas', str(error))
             return
         self.stop.clear()
+        self.manual = False
+        self.reorder_button.configure(state='disabled')
         for widget in self.inputs:
             widget.configure(state='disabled')
         self.status.set('Activo · revisando cada 3 segundos')
@@ -112,6 +117,36 @@ class App:
                         else f'Archivos {ext.upper()}: se dejarán en la carpeta de descarga.')
         self.record('Esperando archivos listos para mover. Los recién descargados pueden tardar unos segundos.')
         self.worker = threading.Thread(target=self.run, args=(engine,), daemon=True)
+        self.worker.start()
+
+    def reorder(self):
+        if self.worker is not None:
+            return
+        try:
+            rules = {'.' + ext: self.values[ext].get().strip()
+                     for ext in ('json', 'pdf') if self.values[ext].get().strip()}
+            engine = Reorganizer(rules, self.record)
+        except (OSError, ValueError) as error:
+            messagebox.showerror('Revisá los destinos', str(error))
+            return
+        destinations = '\n'.join(f'{ext.upper().lstrip(".")}: {folder}' for ext, folder in engine.rules.items())
+        if not messagebox.askokcancel('Reordenar archivos guardados',
+                'Se revisarán estas carpetas y todas sus subcarpetas:\n\n' + destinations +
+                '\n\nCada archivo se moverá a una carpeta AAAA-MM-DD según su última modificación, '
+                'usando la hora local de esta computadora. Esa fecha puede ser distinta de la fecha de la factura. '
+                'Los nombres repetidos se numerarán para conservar ambos archivos.\n\n'
+                'Esta acción se ejecuta una sola vez. La organización automática seguirá usando el día actual.',
+                parent=self.root):
+            return
+        self.stop.clear()
+        self.manual = True
+        for widget in self.inputs:
+            widget.configure(state='disabled')
+        self.reorder_button.configure(state='disabled')
+        self.toggle_button.configure(text='Detener', state='normal')
+        self.status.set('Reordenando archivos guardados…')
+        self.record('Reordenamiento manual iniciado por fecha de modificación.\n' + destinations)
+        self.worker = threading.Thread(target=engine.run_once, args=(self.stop,), daemon=True)
         self.worker.start()
 
     def run(self, engine):
@@ -145,8 +180,11 @@ class App:
             for widget in self.inputs:
                 widget.configure(state='normal')
             self.toggle_button.configure(text='Iniciar', state='normal')
+            self.reorder_button.configure(state='normal')
             self.status.set('Pausado')
-            self.record('Organización detenida. No se moverán más archivos hasta que presionés Iniciar.')
+            if not self.manual:
+                self.record('Organización detenida. No se moverán más archivos hasta que presionés Iniciar.')
+            self.manual = False
         self.root.after(150, self.poll)
 
     def close(self):

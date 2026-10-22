@@ -1,6 +1,6 @@
 """Motor independiente de la interfaz. No recorre subcarpetas."""
 from pathlib import Path
-from datetime import date
+from datetime import date, datetime
 import os
 import shutil
 import time
@@ -99,8 +99,81 @@ class Organizer:
             raise
         message = (f'Archivo {source.suffix.lstrip(".").upper()} organizado: «{source.name}».\n'
                    f'Lo podés encontrar en: {target}\n'
-                   'Ya no está en la carpeta de descarga.')
+                   'Ya no está en su ubicación anterior.')
         if number:
             message += (f'\nSe guardó como «{target.name}» porque ya había un archivo con ese nombre. '
                         'El archivo anterior se conservó.')
         self.log(message)
+        return target
+
+
+class Reorganizer(Organizer):
+    """Reordena una sola vez los destinos existentes; reutiliza la copia segura."""
+
+    def __init__(self, rules, log=print):
+        self.rules = {ext.lower(): Path(folder).resolve() for ext, folder in rules.items()}
+        self.log = log
+        if not self.rules:
+            raise ValueError('Elegí al menos una carpeta de destino.')
+        for folder in self.rules.values():
+            if not folder.is_dir():
+                raise ValueError(f'La carpeta de destino no existe: {folder}')
+        folders = set(self.rules.values())
+        if any(a in b.parents for a in folders for b in folders if a != b):
+            raise ValueError('Para reordenar, los destinos no deben estar uno dentro del otro.')
+
+    def run_once(self, stop):
+        counts = dict(moved=0, unchanged=0, skipped=0, errors=0)
+        candidates = []
+
+        def walk_error(error):
+            counts['errors'] += 1
+            self.log(f'No se pudo revisar una carpeta: {error}')
+
+        # Tomar una lista primero evita volver a recorrer archivos recién movidos.
+        for ext, folder in self.rules.items():
+            for current, dirs, files in os.walk(folder, onerror=walk_error, followlinks=False):
+                if stop.is_set():
+                    break
+                dirs[:] = [name for name in dirs
+                           if not (Path(current) / name).is_symlink()
+                           and not getattr(os.path, 'isjunction', lambda _: False)(Path(current) / name)]
+                candidates.extend((Path(current) / name, folder) for name in files
+                                  if Path(name).suffix.lower() == ext)
+            if stop.is_set():
+                break
+
+        for source, folder in candidates:
+            if stop.is_set():
+                break
+            try:
+                if source.is_symlink() or not source.is_file():
+                    counts['skipped'] += 1
+                    continue
+                stat = source.stat()
+                if (time.time() - stat.st_mtime < 10
+                        or source.with_name(source.name + '.part').exists()):
+                    counts['skipped'] += 1
+                    self.log(f'Se dejó «{source.name}» donde está porque es reciente o tiene una descarga pendiente.')
+                    continue
+                destination = folder / datetime.fromtimestamp(stat.st_mtime).date().isoformat()
+                if source.parent == destination:
+                    counts['unchanged'] += 1
+                    continue
+                if destination.is_symlink() or getattr(os.path, 'isjunction', lambda _: False)(destination):
+                    raise OSError(f'La carpeta del día es un enlace: {destination}')
+                destination.mkdir(parents=True, exist_ok=True)
+                target = self.move(source, destination, (stat.st_size, stat.st_mtime_ns), stop)
+                if target is not None:
+                    counts['moved'] += 1
+            except InterruptedError:
+                counts['skipped'] += 1
+                self.log(f'Se interrumpió el movimiento de «{source.name}». Podés volver a ejecutar la acción.')
+            except (OSError, ValueError, OverflowError) as error:
+                counts['errors'] += 1
+                self.log(f'No se pudo reordenar «{source}». Detalle: {error}')
+        result = 'Reordenamiento detenido' if stop.is_set() else 'Reordenamiento terminado'
+        self.log(f'{result}. Movidos: {counts["moved"]}; ya estaban en su día: {counts["unchanged"]}; '
+                 f'omitidos: {counts["skipped"]}; errores: {counts["errors"]}.\n'
+                 'La organización automática permanece pausada. Las carpetas vacías se conservan.')
+        return counts

@@ -92,7 +92,15 @@ class Tests(unittest.TestCase):
                     target = dest / day.isoformat() / ('invoice' + ext)
                     self.assertEqual(target.read_text(), day.isoformat())
                     self.assertFalse((source / ('invoice' + ext)).exists())
-                    self.assertTrue(any(str(target) in message for message in logs))
+                    # El motor normaliza las rutas. En Windows la misma ruta
+                    # puede tener otra capitalización; comparar texto falla.
+                    logged_paths = [
+                        Path(line.removeprefix('Lo podés encontrar en: ')).resolve()
+                        for message in logs
+                        for line in message.splitlines()
+                        if line.startswith('Lo podés encontrar en: ')
+                    ]
+                    self.assertIn(target.resolve(), logged_paths)
             for ext, dest in rules.items():
                 self.assertEqual((dest / '2026-10-21' / ('invoice' + ext)).read_text(), '2026-10-21')
 

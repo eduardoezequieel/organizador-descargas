@@ -74,7 +74,16 @@ class ReorganizerTests(unittest.TestCase):
             for year, month, day in dates:
                 self.assertTrue((folder / f'{year}-{month:02}' / f'{day}{ext}').exists())
                 self.assertFalse((folder / f'{year}-{month:02}-{day:02}' / f'{day}{ext}').exists())
+                self.assertFalse((folder / f'{year}-{month:02}-{day:02}').exists())
         self.assertEqual(self.engine.run_once(self.stop)['unchanged'], 8)
+
+    def test_daily_folder_with_other_documents_is_preserved(self):
+        folder = self.rules['.json'] / '2024-05-07'
+        self.file(folder / 'invoice.json')
+        other = self.file(folder / 'notes.txt')
+        self.engine.run_once(self.stop)
+        self.assertEqual(other.read_text(), 'example')
+        self.assertTrue((self.rules['.json'] / '2024-05' / 'invoice.json').exists())
 
     def test_failed_copy_retains_source_and_removes_partial(self):
         source = self.file(self.rules['.json'] / 'invoice.json')

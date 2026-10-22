@@ -125,6 +125,7 @@ class Reorganizer(Organizer):
     def run_once(self, stop):
         counts = dict(moved=0, unchanged=0, skipped=0, errors=0)
         candidates = []
+        daily_folders = set()
 
         def walk_error(error):
             counts['errors'] += 1
@@ -138,6 +139,12 @@ class Reorganizer(Organizer):
                 dirs[:] = [name for name in dirs
                            if not (Path(current) / name).is_symlink()
                            and not getattr(os.path, 'isjunction', lambda _: False)(Path(current) / name)]
+                for name in dirs:
+                    try:
+                        if len(name) == 10 and date.fromisoformat(name).isoformat() == name:
+                            daily_folders.add(Path(current) / name)
+                    except ValueError:
+                        pass
                 candidates.extend((Path(current) / name, folder) for name in files
                                   if Path(name).suffix.lower() == ext)
             if stop.is_set():
@@ -172,8 +179,20 @@ class Reorganizer(Organizer):
             except (OSError, ValueError, OverflowError) as error:
                 counts['errors'] += 1
                 self.log(f'No se pudo reordenar «{source}». Detalle: {error}')
+        removed = 0
+        for folder in sorted(daily_folders, key=lambda path: len(path.parts), reverse=True):
+            if stop.is_set():
+                break
+            try:
+                # rmdir solo elimina carpetas vacías; no borra otros documentos.
+                if not folder.is_symlink():
+                    folder.rmdir()
+                    removed += 1
+            except OSError:
+                pass  # Con contenido o sin permiso: conservar la carpeta.
         result = 'Reordenamiento detenido' if stop.is_set() else 'Reordenamiento terminado'
         self.log(f'{result}. Movidos: {counts["moved"]}; ya estaban en su mes: {counts["unchanged"]}; '
                  f'omitidos: {counts["skipped"]}; errores: {counts["errors"]}.\n'
-                 'La organización automática permanece pausada. Las carpetas vacías se conservan.')
+                 f'Carpetas diarias vacías eliminadas: {removed}.\n'
+                 'La organización automática permanece pausada.')
         return counts

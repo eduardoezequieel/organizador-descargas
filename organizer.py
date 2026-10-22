@@ -1,0 +1,106 @@
+"""Motor independiente de la interfaz. No recorre subcarpetas."""
+from pathlib import Path
+from datetime import date
+import os
+import shutil
+import time
+
+
+class Organizer:
+    def __init__(self, source, rules, log=print):
+        self.source = Path(source).resolve()
+        self.rules = {ext.lower(): Path(folder).resolve() for ext, folder in rules.items()}
+        self.log = log
+        self.seen = {}
+        self.notices = {}
+        if not self.source.is_dir():
+            raise ValueError('La carpeta de origen no existe.')
+        for folder in self.rules.values():
+            if folder == self.source:
+                raise ValueError('El destino debe ser diferente del origen.')
+            folder.mkdir(parents=True, exist_ok=True)
+
+    def scan(self, stop):
+        current = set()
+        for source in self.source.iterdir():
+            if stop.is_set():
+                break
+            if source.is_symlink() or not source.is_file():
+                continue
+            destination = self.rules.get(source.suffix.lower())
+            if destination is None:
+                continue
+            current.add(source)
+            try:
+                stat = source.stat()
+                signature = (stat.st_size, stat.st_mtime_ns)
+                previous = self.seen.get(source)
+                self.seen[source] = signature
+                # Firefox conserva un .part mientras descarga. Además, esperamos
+                # dos observaciones iguales y al menos diez segundos sin cambios.
+                if (previous != signature or time.time() - stat.st_mtime < 10
+                        or source.with_name(source.name + '.part').exists()):
+                    self.notice(source, f'Archivo detectado: «{source.name}».\n'
+                                'Esperando a que deje de cambiar antes de moverlo. No tenés que hacer nada.')
+                    continue
+                # Se calcula para cada movimiento: cambia de carpeta al pasar
+                # la medianoche, aunque la aplicación siga abierta.
+                destination = destination / date.today().isoformat()
+                destination.mkdir(parents=True, exist_ok=True)
+                self.move(source, destination, signature, stop)
+            except InterruptedError:
+                self.notice(source, f'Movimiento pendiente: «{source.name}».\n'
+                            'Se interrumpió por una pausa o porque la descarga sigue en curso. Se revisará cuando la organización esté activa.')
+            except OSError as error:
+                self.notice(source, f'No se pudo mover «{source.name}».\n'
+                            f'Destino: {destination}\n'
+                            'Comprobá que la carpeta esté disponible, tenga espacio y permita guardar archivos. '
+                            f'Se volverá a intentar mientras la organización esté activa.\nDetalle: {error}')
+        self.seen = {p: s for p, s in self.seen.items() if p in current}
+        self.notices = {p: s for p, s in self.notices.items() if p in current}
+
+    def notice(self, source, message):
+        if self.notices.get(source) != message:
+            self.log(message)
+            self.notices[source] = message
+
+    def move(self, source, folder, signature, stop):
+        number = 0
+        while not stop.is_set():
+            name = source.name if number == 0 else f'{source.stem} ({number}){source.suffix}'
+            target = folder / name
+            try:
+                output = target.open('xb')
+                break
+            except FileExistsError:
+                number += 1
+        else:
+            return
+        try:
+            with output, source.open('rb') as incoming:
+                while True:
+                    if stop.is_set():
+                        raise InterruptedError('Movimiento pausado')
+                    data = incoming.read(1024 * 1024)
+                    if not data:
+                        break
+                    output.write(data)
+                output.flush()
+                os.fsync(output.fileno())
+            stat = source.stat()
+            if (stat.st_size, stat.st_mtime_ns) != signature:
+                raise OSError('El archivo sigue cambiando; se intentará después.')
+            if stop.is_set() or source.with_name(source.name + '.part').exists():
+                raise InterruptedError('Movimiento pausado o descarga en curso')
+            shutil.copystat(source, target)
+            source.unlink()
+        except BaseException:
+            target.unlink(missing_ok=True)
+            raise
+        message = (f'Archivo {source.suffix.lstrip(".").upper()} organizado: «{source.name}».\n'
+                   f'Lo podés encontrar en: {target}\n'
+                   'Ya no está en la carpeta de descarga.')
+        if number:
+            message += (f'\nSe guardó como «{target.name}» porque ya había un archivo con ese nombre. '
+                        'El archivo anterior se conservó.')
+        self.log(message)

@@ -43,7 +43,7 @@ class App:
         ttk.Label(frame, textvariable=self.status).grid(row=5, column=0, sticky='w', pady=15)
         self.toggle_button = ttk.Button(frame, text='Iniciar', command=self.toggle)
         self.toggle_button.grid(row=5, column=2)
-        self.reorder_button = ttk.Button(frame, text='Reordenar por fecha de modificación…', command=self.reorder)
+        self.reorder_button = ttk.Button(frame, text='Reordenar por mes de modificación…', command=self.reorder)
         self.reorder_button.grid(row=7, column=0, columnspan=3, sticky='w', pady=(12, 0))
         ttk.Label(frame, text='Incluye los archivos existentes. Se guardan en subcarpetas por día (AAAA-MM-DD).\nMinimizar mantiene la app activa; cerrar detiene la organización.').grid(row=6, column=0, columnspan=3, sticky='w')
         ttk.Label(frame, text='Actividad · lo que está haciendo la aplicación').grid(row=8, column=0, columnspan=3, sticky='w', pady=(15, 5))
@@ -132,7 +132,7 @@ class App:
         destinations = '\n'.join(f'{ext.upper().lstrip(".")}: {folder}' for ext, folder in engine.rules.items())
         if not messagebox.askokcancel('Reordenar archivos guardados',
                 'Se revisarán estas carpetas y todas sus subcarpetas:\n\n' + destinations +
-                '\n\nCada archivo se moverá a una carpeta AAAA-MM-DD según su última modificación, '
+                '\n\nCada archivo se moverá a una carpeta AAAA-MM (por ejemplo, 2026-10 para octubre) según su última modificación, '
                 'usando la hora local de esta computadora. Esa fecha puede ser distinta de la fecha de la factura. '
                 'Los nombres repetidos se numerarán para conservar ambos archivos.\n\n'
                 'Esta acción se ejecuta una sola vez. La organización automática seguirá usando el día actual.',
@@ -145,7 +145,7 @@ class App:
         self.reorder_button.configure(state='disabled')
         self.toggle_button.configure(text='Detener', state='normal')
         self.status.set('Reordenando archivos guardados…')
-        self.record('Reordenamiento manual iniciado por fecha de modificación.\n' + destinations)
+        self.record('Reordenamiento manual iniciado por mes de modificación.\n' + destinations)
         self.worker = threading.Thread(target=engine.run_once, args=(self.stop,), daemon=True)
         self.worker.start()
 

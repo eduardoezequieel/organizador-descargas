@@ -31,7 +31,7 @@ class ReorganizerTests(unittest.TestCase):
     def test_root_nested_collisions_metadata_and_repeat(self):
         json = self.rules['.json']
         pdf = self.rules['.pdf']
-        original = self.file(json / '2024-05-07' / 'invoice.json', 'existing')
+        original = self.file(json / '2024-05' / 'invoice.json', 'existing')
         incoming = self.file(json / 'old' / 'nested' / 'invoice.json', 'incoming')
         document = self.file(pdf / 'document.PDF')
         untouched = self.file(json / 'notes.txt')
@@ -40,10 +40,10 @@ class ReorganizerTests(unittest.TestCase):
         self.assertFalse(incoming.exists())
         self.assertFalse(document.exists())
         self.assertEqual(original.read_text(), 'existing')
-        moved = json / '2024-05-07' / 'invoice (1).json'
+        moved = json / '2024-05' / 'invoice (1).json'
         self.assertEqual(moved.read_text(), 'incoming')
         self.assertEqual(moved.stat().st_mtime, self.stamp)
-        self.assertTrue((pdf / '2024-05-07' / 'document.PDF').exists())
+        self.assertTrue((pdf / '2024-05' / 'document.PDF').exists())
         self.assertTrue(untouched.exists())
         self.assertEqual(self.engine.run_once(self.stop), dict(moved=0, unchanged=3, skipped=0, errors=0))
 
@@ -60,12 +60,28 @@ class ReorganizerTests(unittest.TestCase):
         self.assertEqual(self.engine.run_once(self.stop)['moved'], 0)
         self.assertTrue(ready.exists())
 
+    def test_groups_different_days_by_month_and_keeps_years_separate(self):
+        dates = [(2024, 10, 1), (2024, 10, 31), (2024, 11, 1), (2023, 10, 15)]
+        for ext, folder in self.rules.items():
+            for year, month, day in dates:
+                source = self.file(folder / f'{year}-{month:02}-{day:02}' / f'{day}{ext}')
+                stamp = datetime(year, month, day, 12).timestamp()
+                os.utime(source, (stamp, stamp))
+        result = self.engine.run_once(self.stop)
+        self.assertEqual(result['moved'], 8)
+        self.assertEqual(result['errors'], 0)
+        for ext, folder in self.rules.items():
+            for year, month, day in dates:
+                self.assertTrue((folder / f'{year}-{month:02}' / f'{day}{ext}').exists())
+                self.assertFalse((folder / f'{year}-{month:02}-{day:02}' / f'{day}{ext}').exists())
+        self.assertEqual(self.engine.run_once(self.stop)['unchanged'], 8)
+
     def test_failed_copy_retains_source_and_removes_partial(self):
         source = self.file(self.rules['.json'] / 'invoice.json')
         with patch('organizer.shutil.copystat', side_effect=PermissionError('test')):
             self.assertEqual(self.engine.run_once(self.stop)['errors'], 1)
         self.assertEqual(source.read_text(), 'example')
-        self.assertEqual(list((self.rules['.json'] / '2024-05-07').iterdir()), [])
+        self.assertEqual(list((self.rules['.json'] / '2024-05').iterdir()), [])
 
     def test_rejects_nested_destinations(self):
         nested = self.rules['.json'] / 'nested'

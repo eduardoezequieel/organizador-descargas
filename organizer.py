@@ -156,12 +156,12 @@ class Reorganizer(Organizer):
                     counts['skipped'] += 1
                     self.log(f'Se dejó «{source.name}» donde está porque es reciente o tiene una descarga pendiente.')
                     continue
-                destination = folder / datetime.fromtimestamp(stat.st_mtime).date().isoformat()
+                destination = folder / datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m')
                 if source.parent == destination:
                     counts['unchanged'] += 1
                     continue
                 if destination.is_symlink() or getattr(os.path, 'isjunction', lambda _: False)(destination):
-                    raise OSError(f'La carpeta del día es un enlace: {destination}')
+                    raise OSError(f'La carpeta del mes es un enlace: {destination}')
                 destination.mkdir(parents=True, exist_ok=True)
                 target = self.move(source, destination, (stat.st_size, stat.st_mtime_ns), stop)
                 if target is not None:
@@ -173,7 +173,7 @@ class Reorganizer(Organizer):
                 counts['errors'] += 1
                 self.log(f'No se pudo reordenar «{source}». Detalle: {error}')
         result = 'Reordenamiento detenido' if stop.is_set() else 'Reordenamiento terminado'
-        self.log(f'{result}. Movidos: {counts["moved"]}; ya estaban en su día: {counts["unchanged"]}; '
+        self.log(f'{result}. Movidos: {counts["moved"]}; ya estaban en su mes: {counts["unchanged"]}; '
                  f'omitidos: {counts["skipped"]}; errores: {counts["errors"]}.\n'
                  'La organización automática permanece pausada. Las carpetas vacías se conservan.')
         return counts

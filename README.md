@@ -17,11 +17,11 @@ Minimizar mantiene la aplicación funcionando. Cerrar la detiene. Al abrir comie
 
 Al mover un archivo, el historial de Firefox conserva su ruta anterior: abrí los JSON desde su carpeta de destino.
 
-## Reordenar archivos guardados por fecha de modificación
+## Reordenar archivos guardados por mes de modificación
 
-Con la aplicación pausada, presioná **Reordenar por fecha de modificación…** y revisá los destinos que aparecen antes de confirmar. Se recorren las carpetas de destino configuradas y sus subcarpetas: JSON en el destino JSON, PDF en el destino PDF. Cada archivo se guarda en `AAAA-MM-DD` según su última modificación en la zona horaria local. Esta fecha no necesariamente es la de la factura o la descarga.
+Con la aplicación pausada, presioná **Reordenar por mes de modificación…** y revisá los destinos que aparecen antes de confirmar. Se recorren las carpetas de destino configuradas y sus subcarpetas: JSON en el destino JSON, PDF en el destino PDF. Cada archivo se guarda en `AAAA-MM` (por ejemplo, `2026-10` para octubre y `2026-11` para noviembre) según su última modificación en la zona horaria local. Esta fecha no necesariamente es la de la factura o la descarga.
 
-Es una acción manual de una sola ejecución. Los archivos ya ubicados en su día se dejan donde están; los nombres repetidos se numeran sin sobrescribir y las carpetas vacías se conservan. Se omiten enlaces y archivos recientes o con un `.part` asociado. El registro muestra el resultado; podés usar **Detener** y ejecutar la acción nuevamente más tarde. La organización automática permanece pausada al terminar y, cuando la iniciés, sigue agrupando por el día actual. Los destinos pueden ser la misma carpeta, pero no estar uno dentro del otro.
+Es una acción manual de una sola ejecución. Los archivos ya ubicados en su mes se dejan donde están; los nombres repetidos se numeran sin sobrescribir y las carpetas vacías se conservan. Se omiten enlaces y archivos recientes o con un `.part` asociado. El registro muestra el resultado; podés usar **Detener** y ejecutar la acción nuevamente más tarde. La organización automática permanece pausada al terminar y, cuando la iniciés, sigue agrupando por el día actual. Los destinos pueden ser la misma carpeta, pero no estar uno dentro del otro.
 
 ## Probar en tu Mac
 
